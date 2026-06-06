@@ -3,6 +3,7 @@ import numpy as np
 from scipy.optimize import minimize
 import os
 import matplotlib.pyplot as plt
+import copy
 
 plt.rcParams['font.family'] = 'Times New Roman'
 plt.rcParams['font.size'] = 11
@@ -40,7 +41,7 @@ class MultiHorizonBacktester:
         return float(risk_part + turnover_penalty)
 
     def optimize_markowitz(self, cov_matrix, mean_returns, prev_weights):
-        init_w = np.ones(self.N) / self.N
+        init_w = copy.copy(prev_weights)
         bounds = tuple((0.0, 1.0) for _ in range(self.N))
 
         constraints = [{'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0}]
@@ -51,14 +52,14 @@ class MultiHorizonBacktester:
             constraints.append({'type': 'ineq', 'fun': lambda w: np.dot(w, mean_returns) - np.median(mean_returns)})
 
         res = minimize(self._markowitz_objective, init_w, args=(cov_matrix, prev_weights),
-                       method='SLSQP', bounds=bounds, constraints=constraints, options={'ftol': 1e-5})
+                       method='SLSQP', bounds=bounds, constraints=constraints, options={'ftol': 1e-7})
 
         if res.success:
             return res.x
         else:
             res_fallback = minimize(self._markowitz_objective, init_w, args=(cov_matrix, prev_weights),
                                     method='SLSQP', bounds=bounds, constraints=[constraints[0]],
-                                    options={'ftol': 1e-5})
+                                    options={'ftol': 1e-7})
             return res_fallback.x
 
     def optimize_cvar(self, returns_S, returns_L, mean_returns, prev_weights):
@@ -87,14 +88,14 @@ class MultiHorizonBacktester:
                 {'type': 'ineq', 'fun': lambda p: np.dot(p[:self.N], mean_returns) - np.median(mean_returns)})
 
         res = minimize(self._cvar_objective, init_params, args=(returns_S, returns_L, prev_weights),
-                       method='SLSQP', bounds=bounds, constraints=constraints, options={'ftol': 1e-9, 'maxiter': 500})
+                       method='SLSQP', bounds=bounds, constraints=constraints, options={'ftol': 1e-7, 'maxiter': 500})
 
         if res.success:
             return res.x[:self.N]
         else:
             res_fallback = minimize(self._cvar_objective, init_params, args=(returns_S, returns_L, prev_weights),
                                     method='SLSQP', bounds=bounds, constraints=constraints[:3],
-                                    options={'ftol': 1e-9, 'maxiter': 500})
+                                    options={'ftol': 1e-7, 'maxiter': 500})
             return res_fallback.x[:self.N]
 
     def run_backtest(self):
@@ -155,8 +156,6 @@ class MultiHorizonBacktester:
 
                 w_mpt, w_cvar = w_mpt_new, w_cvar_new
                 last_rebal_year_period = current_year_period
-
-                print(f"Веса Марковица:{w_mpt * 100}\nВеса Мои:{w_cvar * 100}")
 
 
             day_ret = out_of_sample_returns.loc[current_date].to_numpy()
